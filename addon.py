@@ -9,6 +9,27 @@ from lib.tugastream.web import dev_http
 
 
 
+# Local Packages
+scripts_import = [os.getcwd() + '\\js2py']
+for script in scripts_import:
+    if not script in sys.path:
+        sys.path.insert(0, script)
+
+import js2py
+
+js = """
+	function gop(){
+    	return '123';
+    }
+
+gop()
+"""
+
+result = js2py.eval_js(js)
+print(result)
+
+
+
 __handle__ = int(sys.argv[1])
 args = urlparse.parse_qs(sys.argv[2][1:])
 base_url = sys.argv[0]
@@ -207,7 +228,7 @@ resolvecf()
     #print("PLZ -----> " + po.content)
 
 
-def fetch_movies(url):
+def fetch_movies(url,isseries=False):
     r = http_GET(url,8)
     data = r.content
     _valid = check_tugastream_html(data)
@@ -232,11 +253,15 @@ def fetch_movies(url):
                         if(len(link_res) > 0):
                             _link_ = link_res[0]
                         if(_img_ and _name_ and _link_):
-                            url = build_url({'name': _name_, 'action': 'movie|' + _link_})
-                            create_dir(_name_,url,title=_name_,thumb=_img_,is_folder=False)
-    fetch_next_movies_page(data)
+                            if (not isseries):
+                                url = build_url({'name': _name_, 'action': 'movie|' + _link_})
+                                create_dir(_name_,url,title=_name_,thumb=_img_,is_folder=False)
+                            else:
+                                url = build_url({'name': _name_, 'action': 'serie|' + _link_})
+                                create_dir(_name_,url,title=_name_,thumb=_img_,is_folder=True)
+    fetch_next_movies_page(data,isseries)
 
-def fetch_next_movies_page(data):
+def fetch_next_movies_page(data,isseries=False):
     next_page_res = data.split('<div class="pagination">')
     for np in next_page_res:
         if ('class="current"' in np):
@@ -246,8 +271,12 @@ def fetch_next_movies_page(data):
                     if ('class="current"' in nv):
                         next_res = re.findall('''<a class='arrow_pag' href="([^"]*)">''', nv)
                         if (len(next_res) > 0):
-                            url = build_url({'mode': 'folder', 'action': 'Filmes|' + next_res[0]})
-                            create_dir("Proxima Pagina",url,title="Proxima Pagina",is_folder=True)
+                            if (not isseries):
+                                url = build_url({'mode': 'folder', 'action': 'Filmes|' + next_res[0]})
+                                create_dir("Proxima Pagina",url,title="Proxima Pagina",is_folder=True)
+                            else:
+                                url = build_url({'mode': 'folder', 'action': 'Series|' + next_res[0]})
+                                create_dir("Proxima Pagina",url,title="Proxima Pagina",is_folder=True)
 
 def get_host_from_link(link):
     s = link
@@ -319,7 +348,6 @@ def mixdrop_after_resolve(browse_link,pdialog):
         pdialog.update(95,'Enjoy')
         pdialog.close()
         _player_.play(resolved, play_item)
-        check_if_video_started(_player_,resolved,__LEGENDAS__)
 
 def feurl_parse_subs_in_link(browse_link):
     if ('caption=' in browse_link):
@@ -394,7 +422,6 @@ def feurl_after_resolver(browse_link,pDialog):
     print("Starting feurl VPlayer --->")
     pDialog.update(95,'Enjoy')
     _player_.play(resolved, play_item)
-    check_if_video_started(_player_,resolved,__LEGENDAS__,_link_)
 
 
 def openplayer_after_resolver(browse_link,pDialog):
@@ -427,27 +454,6 @@ def openplayer_after_resolver(browse_link,pDialog):
             _player_.play(resolved, play_item)
 
 
-
-
-# Threading is the only way of not compromise the player work
-def check_if_video_started(player,link,subtitles,alternative_link="",timeout=1000,retry=40):
-    x = threading.Thread(target=_check_if_video_started_, args=(player, link, subtitles, alternative_link, timeout, retry,))
-    x.start()
-def _check_if_video_started_(player,link,subtitles,alternative_link="",timeout=1000,retry=40):
-    pDialog = xbmcgui.DialogProgressBG()
-    pDialog.create('Checking if video starts ...')
-    for i in range(retry):
-        pDialog.update( int((i * 100) / retry), 'A verificar ...')
-        if (player.isPlayingVideo()):
-            return i
-        xbmc.sleep(timeout)
-    pDialog.update(33, 'O lançamento falhou ...\n A lançar de novo ...')
-    xbmc.sleep(2000)
-    if (alternative_link != ""):
-        link = alternative_link
-    y = threading.Thread(target=play_movie_file, args=(link,subtitles,False,))
-    y.start()
-    pDialog.close()
 
 
 
@@ -485,6 +491,48 @@ def router(paramstring):
                     openplayer_after_resolver(browse_link,pDialog)
                 elif('1fichier' in get_host_from_link(browse_link)):
                     onefichier_after_resolver(browse_link,pDialog,slist)
+        elif ("Series|" in paramstring['action']):
+            uri = paramstring['action'].split("|")[1]
+            if (uri == '/series'):
+                fetch_movies(TUGA_HOST + uri, True)
+            else:fetch_movies(uri, True)
+        elif("serie|" in paramstring['action']):
+            uri = paramstring['action'].split("|")[1]
+            req = dev_http.requests_GET(uri,8)
+            #Search for the iFrame
+            _episodes_link_ = re.findall('<iframe class="metaframe rptss" src="([^"]*)" frameborder="0" scrolling="no" allowfullscreen><\/iframe>', req.content)
+            for link in _episodes_link_:
+                links_req = dev_http.requests_GET(link,8)
+                data = links_req.content
+                parts = data.split('<script type="text/javascript">')
+                for part in parts:
+                    if ('InitPlayer(' in part):
+                        sv = '".Svplayer"'
+                        datajs = part.split('</script>')[0].split('window.InitPlayer =')[1].split("$(" + sv + ").on('click', '#CloseSv', function () {")[0]
+                        js_parts = datajs.split('\n')
+                        renew_js = ""
+                        for js_part in js_parts:
+                            #print("Part ---> " + str(js_part))
+                            if (not '$(' in js_part and not 'Now()' in js_part):
+                                renew_js += js_part + '\n'
+                        newJS = renew_js.replace('addiframe','return')
+                        #print("Run ----> " + newJS)
+                        languages = ['leg','dub']
+                        episode_links = []
+                        for language in languages:
+                            for season in range(30):
+                                for episode in range(50):
+                                    if (season > 0 and episode > 0):
+                                        result = js2py.eval_js(newJS + '\n' + "InitPlayer(" + str(season) + "," + str(episode) + ",'" + str(language) + "');")
+                                        if not result:
+                                            break
+                                        #print("temporada ---> " + str(season) + ' / episodio ---> ' + str(episode) + ",'" + str(language))
+                                        episode_links.append(str(language) + "|" + str(season) + '|' + str(episode) + '|' + result)
+                        print(str(episode_links))
+                        # Now Build a dialog Dublado or Legendado, then build the items seasons
+                        # The season choise shoud contain the episodes stranded
+                        # Each episode will contain the link that will pop up the various links options
+                        # Then Resolve each link
     else:
         do_menu()
     xbmcplugin.endOfDirectory(int(sys.argv[1]))
@@ -564,6 +612,7 @@ def onefichier_after_resolver(browse_link,pDialog,slist):
                     _subtitles_ = onefichier_subtitles_fetcher(slist)
                     resolved = r_link[0][0]
                     onefichier_downloader(resolved,pDialog,_subtitles_)
+            pDialog.close()
     else:
         pDialog.close()
         mensagemok("Lista de Espera", 'Aguarda : ' +  _res_wait_ + '\n Para poderes continuar o download')
@@ -575,7 +624,7 @@ def onefichier_after_resolver(browse_link,pDialog,slist):
 
 def event_play_closed(player, deleteFile=""):
     if (player.isPlayingVideo() == True):
-        while player.isPlaying():
+        while player.isPlayingVideo():
             xbmc.sleep(1000)
     # Movie closed here
     if (deleteFile != ""):
@@ -584,13 +633,13 @@ def event_play_closed(player, deleteFile=""):
 
 def play_movie_file(file_name,subtitles=None,deleteFile=False):
     play_item = xbmcgui.ListItem(path=file_name)
-    if (subtitles):
-        play_item.setSubtitles([subtitles])
+    #if (subtitles):
+        #play_item.setSubtitles([subtitles])
     _player_ = xbmc.Player()
     _player_.play(file_name, play_item)
-    if (deleteFile == False): y = threading.Thread(target=event_play_closed, args=(_player_,))
-    else: y = threading.Thread(target=event_play_closed, args=(_player_,file_name,))
-    y.start()
+    #if (deleteFile == False): y = threading.Thread(target=event_play_closed, args=(_player_,))
+    #else: y = threading.Thread(target=event_play_closed, args=(_player_,file_name,))
+    #y.start()
 
 
 
