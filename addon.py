@@ -297,7 +297,7 @@ def mixdrop_after_resolve(browse_link,pdialog):
         subtitles = browse_link.split('sub=')[1]
         r = http_GET(subtitles, 7)
         subtitles = r.content
-    pdialog.update(50,'Parsing JS...')
+    pdialog.update(50,'Parsing JS ...')
     try:
         resolved = resolveurl.resolve(browse_link)
         print("Link Resolved ---> " + resolved)
