@@ -299,7 +299,6 @@ def mixdrop_after_resolve(browse_link,pdialog):
         subtitles = r.content
     pdialog.update(50,'Parsing JS...')
     try:
-        # Using a resolver agains my wheel
         resolved = resolveurl.resolve(browse_link)
         print("Link Resolved ---> " + resolved)
     except:
