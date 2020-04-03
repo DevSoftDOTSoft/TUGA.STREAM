@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addons>
+<addon id="plugin.video.tuga.stream" name="TUGASTREAM" provider-name="TUGATVSTREAM" version="0.0.00.2">
+ <requires>
+  <import addon="xbmc.python" version="2.14.0"/>
+  <import addon="script.module.t0mm0.common"/>
+  <import addon="plugin.video.youtube" optional="true" />
+  <import addon="script.module.requests" version="2.12.4"/>
+  <import addon="script.module.resolveurl" optional="true" />
+  </requires>
+ <extension library="addon.py" point="xbmc.python.pluginsource">
+  <provides>video</provides>
+ </extension>
+ <extension point="xbmc.addon.metadata">
+    <summary lang="en">TUGASTREAM</summary>
+    <description lang="en">Addon site TUGASTREAM</description>
+    <description lang="en">Filmes e series no ..Kodi. </description>
+    <disclaimer lang="en">Como desenvolvedor.............. do addon, nada tenho a haver com site. O site pode ser acedido por um browser. Limito-me a ler o seu conteúdo disponibilizado e converter em addon.</disclaimer>
+    <language></language>
+    <platform>all</platform>
+    <license></license>
+    <forum></forum>
+    <website></website>
+    <email></email>
+    <source></source>
+ </extension>
+</addon>
+
+</addons>
