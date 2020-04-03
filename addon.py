@@ -6,6 +6,7 @@ import requests
 import resolveurl
 
 from lib.tugastream.web import dev_http
+from lib.tugastream.JS import dev_JS
 
 
 
@@ -61,7 +62,6 @@ def makeRequest(url, headers=None,timeout=1):
                 print("HTTP-ERROR ---> " + url)
                 return None
 
-HOST_LINK = "https://www.dropbox.com/s/lekqu0fugf7unaj/tugatvhost.txt?dl=1"
 TUGA_HOST = "https://www.tugastream.club/" #base64.b64decode(makeRequest(HOST_LINK,timeout=2))
 
 
@@ -207,7 +207,7 @@ resolvecf()
     #print("PLZ -----> " + po.content)
 
 
-def fetch_movies(url):
+def fetch_movies(url,isseries=False):
     r = http_GET(url,8)
     data = r.content
     _valid = check_tugastream_html(data)
@@ -232,11 +232,15 @@ def fetch_movies(url):
                         if(len(link_res) > 0):
                             _link_ = link_res[0]
                         if(_img_ and _name_ and _link_):
-                            url = build_url({'name': _name_, 'action': 'movie|' + _link_})
-                            create_dir(_name_,url,title=_name_,thumb=_img_,is_folder=False)
-    fetch_next_movies_page(data)
+                            if (not isseries):
+                                url = build_url({'name': _name_, 'action': 'movie|' + _link_})
+                                create_dir(_name_,url,title=_name_,thumb=_img_,is_folder=False)
+                            else:
+                                url = build_url({'name': _name_, 'action': 'serie|' + _link_})
+                                create_dir(_name_,url,title=_name_,thumb=_img_,is_folder=True)
+    fetch_next_movies_page(data,isseries)
 
-def fetch_next_movies_page(data):
+def fetch_next_movies_page(data,isseries=False):
     next_page_res = data.split('<div class="pagination">')
     for np in next_page_res:
         if ('class="current"' in np):
@@ -246,8 +250,12 @@ def fetch_next_movies_page(data):
                     if ('class="current"' in nv):
                         next_res = re.findall('''<a class='arrow_pag' href="([^"]*)">''', nv)
                         if (len(next_res) > 0):
-                            url = build_url({'mode': 'folder', 'action': 'Filmes|' + next_res[0]})
-                            create_dir("Proxima Pagina",url,title="Proxima Pagina",is_folder=True)
+                            if (not isseries):
+                                url = build_url({'mode': 'folder', 'action': 'Filmes|' + next_res[0]})
+                                create_dir("Proxima Pagina",url,title="Proxima Pagina",is_folder=True)
+                            else:
+                                url = build_url({'mode': 'folder', 'action': 'Series|' + next_res[0]})
+                                create_dir("Proxima Pagina",url,title="Proxima Pagina",is_folder=True)
 
 def get_host_from_link(link):
     s = link
@@ -319,7 +327,6 @@ def mixdrop_after_resolve(browse_link,pdialog):
         pdialog.update(95,'Enjoy')
         pdialog.close()
         _player_.play(resolved, play_item)
-        check_if_video_started(_player_,resolved,__LEGENDAS__)
 
 def feurl_parse_subs_in_link(browse_link):
     if ('caption=' in browse_link):
@@ -394,7 +401,6 @@ def feurl_after_resolver(browse_link,pDialog):
     print("Starting feurl VPlayer --->")
     pDialog.update(95,'Enjoy')
     _player_.play(resolved, play_item)
-    check_if_video_started(_player_,resolved,__LEGENDAS__,_link_)
 
 
 def openplayer_after_resolver(browse_link,pDialog):
@@ -403,8 +409,8 @@ def openplayer_after_resolver(browse_link,pDialog):
     pDialog.update(up, 'Running OpenPlayer Bruteforce AI ...')
     # This fella needs a push couse it can fail several times
     good_resolved = None
-    for i in range(5):
-        up += (5 + i)
+    for i in range(9):
+        up += (5)
         pDialog.update(up,'Resolving Openplayer..')
         resolved,subs = openplayer_resolver(op_link)
         if (resolved and subs):
@@ -427,27 +433,6 @@ def openplayer_after_resolver(browse_link,pDialog):
             _player_.play(resolved, play_item)
 
 
-
-
-# Threading is the only way of not compromise the player work
-def check_if_video_started(player,link,subtitles,alternative_link="",timeout=1000,retry=40):
-    x = threading.Thread(target=_check_if_video_started_, args=(player, link, subtitles, alternative_link, timeout, retry,))
-    x.start()
-def _check_if_video_started_(player,link,subtitles,alternative_link="",timeout=1000,retry=40):
-    pDialog = xbmcgui.DialogProgressBG()
-    pDialog.create('Checking if video starts ...')
-    for i in range(retry):
-        pDialog.update( int((i * 100) / retry), 'A verificar ...')
-        if (player.isPlayingVideo()):
-            return i
-        xbmc.sleep(timeout)
-    pDialog.update(33, 'O lançamento falhou ...\n A lançar de novo ...')
-    xbmc.sleep(2000)
-    if (alternative_link != ""):
-        link = alternative_link
-    y = threading.Thread(target=play_movie_file, args=(link,subtitles,False,))
-    y.start()
-    pDialog.close()
 
 
 
@@ -484,7 +469,158 @@ def router(paramstring):
                 elif ('openplayer' in get_host_from_link(browse_link)):
                     openplayer_after_resolver(browse_link,pDialog)
                 elif('1fichier' in get_host_from_link(browse_link)):
-                    onefichier_after_resolver(browse_link,pDialog,slist)
+                    if ('&' in browse_link):
+                        browse_link = browse_link.split('&')[0]
+                    print("ONEFichier FILE ---> " + browse_link)
+                    pDialog.update(35,'Fetching noncenses...')
+                    r = http_GET(browse_link, 5)
+                    _ns_name = None
+                    _ns_val = None
+                    _subtitles_ = None
+                    _res_wait_ = onefichier_can_download(r.content)
+                    if (_res_wait_ == True):
+                        res_nonsense = re.findall('<input type="hidden" name="([^"]*)" value="([^"]*)" \/>', r.content)
+                        if (len(res_nonsense) > 0):
+                            _ns_name = res_nonsense[0][0]
+                            _ns_val = res_nonsense[0][1]
+                        if (_ns_name and _ns_val):
+                            data = { _ns_name: _ns_val }
+                            pDialog.update(55,'Posting noncenses...')
+                            r = requests.post(browse_link, data, timeout=5)
+                            r_link = re.findall('<a href="([^"]*)"  style="([^"]*)" class="ok btn-general btn-orange">Click here to download the file<\/a>', r.content)
+                            if (len(r_link) > 0):
+                                if (len(r_link[0]) > 0):
+                                    # We got it! START ----
+                                    _subtitles_ = onefichier_subtitles_fetcher(slist)
+                                    print("Subtitles onefichier ---> " + str(len(_subtitles_)))
+                                    resolved = r_link[0][0]
+                                    _PLAYING_ = False
+                                    u = urllib2.urlopen(resolved)
+                                    file_name = __FICHEIRO_VIDEO__
+                                    f = open(file_name, 'wb')
+                                    meta = u.info()
+                                    file_size = int(meta.getheaders("Content-Length")[0])
+                                    pDialog.close()
+                                    pDialog = xbmcgui.DialogProgressBG()
+                                    pDialog.create('Download')
+                                    file_size_dl = 0
+                                    block_sz = 8192
+                                    while True:
+                                        buffer = u.read(block_sz)
+                                        if not buffer:
+                                            break
+                                        file_size_dl += len(buffer)
+                                        f.write(buffer)
+                                        _percent_ = (file_size_dl * 100. / file_size)
+                                        if (_PLAYING_ == False):
+                                            pDialog.update(int(_percent_), 'A Iniciar aos 3% Aguarde ...'  + '\nAtenção o download é sequencial, não deve avançar.')
+                                        else:
+                                            pDialog.update(int(_percent_), 'A continuar o download ...')
+                                        if (_percent_ > 3 and _PLAYING_ == False):
+                                            _PLAYING_ = True
+                                            play_movie_file(file_name,_subtitles_,True)
+                                    f.close()
+                    else:
+                        pDialog.close()
+                        mensagemok("Lista de Espera", 'Aguarda : ' +  _res_wait_ + '\n Para poderes continuar o download')
+                elif('bit.ly' in get_host_from_link(browse_link)):
+                    r = requests.head(browse_link, allow_redirects=True, timeout=8)
+                    _link = r.url
+                    print("BITLY ---> " + _link)
+                    if ('?' in _link):
+                        _link = _link.split('?')[0]
+                else:
+                    try:
+                        print("Link Resolving Generic")
+                        resolved = resolveurl.resolve(browse_link)
+                        print("Link Resolved ---> " + resolved)
+                    except:pass
+        elif ("Series|" in paramstring['action']):
+            uri = paramstring['action'].split("|")[1]
+            if (uri == '/series'):
+                fetch_movies(TUGA_HOST + uri, True)
+            else:fetch_movies(uri, True)
+        elif("serie|" in paramstring['action']):
+            uri = paramstring['action'].split("|")[1]
+            req = dev_http.requests_GET(uri,8)
+            #Search for the iFrame
+            _episodes_link_ = re.findall('<iframe class="metaframe rptss" src="([^"]*)" frameborder="0" scrolling="no" allowfullscreen><\/iframe>', req.content)
+            for link in _episodes_link_:
+                links_req = dev_http.requests_GET(link,8)
+                data = links_req.content
+                parts = data.split('<script type="text/javascript">')
+                for part in parts:
+                    if ('InitPlayer(' in part):
+                        sv = '".Svplayer"'
+                        datajs = part.split('</script>')[0].split('window.InitPlayer =')[1].split("$(" + sv + ").on('click', '#CloseSv', function () {")[0]
+                        js_parts = datajs.split('\n')
+                        renew_js = ""
+                        for js_part in js_parts:
+                            if (not '$(' in js_part and not 'Now()' in js_part):
+                                renew_js += js_part + '\n'
+                        newJS = renew_js.replace('addiframe','return')
+                        languages = ['leg','dub']
+                        episode_links = []
+                        for language in languages:
+                            for season in range(30):
+                                for episode in range(50):
+                                    if (season > 0 and episode > 0):
+                                        #result = js2py.eval_js(newJS + '\n' + "InitPlayer(" + str(season) + "," + str(episode) + ",'" + str(language) + "');")
+                                        result = dev_JS.resolve_js(newJS + '\n' + "InitPlayer(" + str(season) + "," + str(episode) + ",'" + str(language) + "');")
+                                        if not result:
+                                            break
+                                        episode_links.append(str(language) + "|" + str(season) + '|' + str(episode) + '|' + result)
+                        dialog = xbmcgui.Dialog()
+                        ret = dialog.select('Choose a Lang', languages)
+                        selected_language = languages[ret]
+                        episodes = []
+                        for ep in episode_links:
+                            ep_lang = ep.split('|')[0]
+                            ep_season = ep.split('|')[1]
+                            ep_episode = ep.split('|')[2]
+                            ep_link = ep.split('|')[3]
+                            if(selected_language == ep_lang):
+                                episodes.append(ep_season + '|' + ep_episode + '|' + ep_link)
+                        for episode in episodes:
+                            ep_season = episode.split('|')[0]
+                            ep_episode = episode.split('|')[1]
+                            ep_link = episode.split('|')[2]
+                            _name = "Temporada " + str(ep_season) + ' - Episodio ' + str(ep_episode)
+                            url = build_url({'name': _name, 'action': 'seriep|' + ep_link})
+                            create_dir(_name,url,title=_name,thumb=None,is_folder=False)
+        elif("seriep|" in paramstring['action']):
+            uri = paramstring['action'].split("|")[1]
+            print("Play ep ----> " + uri)
+            pDialog = xbmcgui.DialogProgress()
+            pDialog.create('URL', 'Parsing URL')
+            info_links = dev_http.requests_GET(uri,8)
+            data = info_links.content
+            links_result = re.findall("<a href='([^']*)'><div class='button' id='([^']*)'>([^']*)<\/div><\/a>", data)
+            servers = []
+            servers_names = []
+            for link in links_result:
+                v_link = link[0]
+                v_name = link[2]
+                servers.append(v_link)
+                servers_names.append(v_name)
+            ret = xbmcgui.Dialog().select('Choose a Server', servers_names)
+            browse_link = servers[ret]
+            browse_name = servers_names[ret]
+            print("Play ep ----> " + browse_link + ' - ' + browse_name)
+            requester = dev_http.requests_GET("https://facebookis.club/servers/" + browse_link, 8)
+            link_res = re.findall("<iframe src='([^']*)' width='100%' height='100%' scrolling='no' frameborder='0' allowfullscreen><\/iframe>", requester.content)
+            if (len(link_res) > 0):
+                pre_resolved = link_res[0]
+                if ('MixDrop' in browse_name):
+                    print("To resolve ---> " + pre_resolved)
+                    mixdrop_after_resolve(pre_resolved ,pDialog)
+                else:
+                    try:
+                        resolved = resolveurl.resolve(pre_resolved)
+                        print("Link Resolved ---> " + resolved)
+                        play_movie_file(resolved,None,False)
+                    except:pass
+
     else:
         do_menu()
     xbmcplugin.endOfDirectory(int(sys.argv[1]))
@@ -508,65 +644,10 @@ def onefichier_subtitles_fetcher(_old_links):
     return False
 
 def onefichier_downloader(resolved,pDialog,subtitles=None):
-    _PLAYING_ = False
-    u = urllib2.urlopen(resolved)
-    file_name = __CACHE_FOLDER__ + "vid.mp4"
-    f = open(file_name, 'wb')
-    meta = u.info()
-    file_size = int(meta.getheaders("Content-Length")[0])
-    pDialog.close()
-    pDialog = xbmcgui.DialogProgressBG()
-    pDialog.create('Download')
-    file_size_dl = 0
-    block_sz = 8192
-    while True:
-        buffer = u.read(block_sz)
-        if not buffer:
-            break
-        file_size_dl += len(buffer)
-        f.write(buffer)
-        _percent_ = (file_size_dl * 100. / file_size)
-        _fake_percent_ = int((_percent_ * 100) / 5)
-        status = r"%10d  [%3.2f%%]" % (file_size_dl, file_size_dl * 100. / file_size)
-        status = status + chr(8)*(len(status)+1)
-        pDialog.update(_fake_percent_, str(status)  + '\nAtenção o download é sequencial, não deve avançar.')
-        if (_percent_ > 5 and _PLAYING_ == False):
-            pDialog.close()
-            _PLAYING_ = True
-            x = threading.Thread(target=play_movie_file, args=(file_name,subtitles,True,))
-            x.start()
-    f.close()
-    pDialog.close()
+    print()
 
 def onefichier_after_resolver(browse_link,pDialog,slist):
-    if ('&' in browse_link):
-        browse_link = browse_link.split('&')[0]
-    print("ONEFichier FILE ---> " + browse_link)
-    pDialog.update(35,'Fetching noncenses...')
-    r = http_GET(browse_link, 5)
-    _ns_name = None
-    _ns_val = None
-    _subtitles_ = None
-    _res_wait_ = onefichier_can_download(r.content)
-    if (_res_wait_ == True):
-        res_nonsense = re.findall('<input type="hidden" name="([^"]*)" value="([^"]*)" \/>', r.content)
-        if (len(res_nonsense) > 0):
-            _ns_name = res_nonsense[0][0]
-            _ns_val = res_nonsense[0][1]
-        if (_ns_name and _ns_val):
-            data = { _ns_name: _ns_val }
-            pDialog.update(55,'Posting noncenses...')
-            r = requests.post(browse_link, data, timeout=5)
-            r_link = re.findall('<a href="([^"]*)"  style="([^"]*)" class="ok btn-general btn-orange">Click here to download the file<\/a>', r.content)
-            if (len(r_link) > 0):
-                if (len(r_link[0]) > 0):
-                    # We got it! START ----
-                    _subtitles_ = onefichier_subtitles_fetcher(slist)
-                    resolved = r_link[0][0]
-                    onefichier_downloader(resolved,pDialog,_subtitles_)
-    else:
-        pDialog.close()
-        mensagemok("Lista de Espera", 'Aguarda : ' +  _res_wait_ + '\n Para poderes continuar o download')
+    print()
 
 
 
@@ -575,7 +656,7 @@ def onefichier_after_resolver(browse_link,pDialog,slist):
 
 def event_play_closed(player, deleteFile=""):
     if (player.isPlayingVideo() == True):
-        while player.isPlaying():
+        while player.isPlayingVideo():
             xbmc.sleep(1000)
     # Movie closed here
     if (deleteFile != ""):
@@ -612,7 +693,7 @@ def openplayer_resolver(link):
                 i += 1
                 #print(s)
                 if (i > 360):
-                    print("var ---> " + s)
+                    #print("var ---> " + s)
                     if (len(s) == 60):
                         print("Openplayer TOK_VAR (DEBUG) ---> " + s + " -> " + str(len(s)) )
                         tok_var = s
